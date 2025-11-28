@@ -1,35 +1,540 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fumikiri Kankan</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#333">
+    <!-- PWA Settings for Fullscreen Experience -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>ふみきりカンカン！関西スペシャル（フルスクリーン対応）</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
             background-color: #333;
-            touch-action: none;
-            -webkit-user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
         }
         canvas {
             display: block;
             touch-action: none;
         }
+        
+        #start-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 2rem;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #gear-btn {
+            position: absolute; top: 15px; right: 15px; width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.9); border-radius: 50%; font-size: 30px;
+            display: flex; justify-content: center; align-items: center; cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 50; border: 2px solid #666;
+        }
+
+        #settings-modal {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 60;
+        }
+        .modal-content {
+            background: #FFF; width: 85%; max-width: 400px; padding: 20px;
+            border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            border: 4px solid #FFD700;
+        }
+        h2 { margin-top: 0; color: #333; }
+        h3 { margin: 12px 0 5px; color: #666; font-size: 1.1rem; }
+        
+        .btn-group { display: flex; justify-content: center; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
+        .btn-group button {
+            flex: 1; padding: 10px 5px; border: 2px solid #ccc; background: #f0f0f0;
+            border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; color: #555; min-width: 60px;
+        }
+        .btn-group button.active { background: #0072BC; color: white; border-color: #005a9c; }
+        
+        #fullscreen-btn {
+            display: block; width: 100%; margin: 15px 0; padding: 12px;
+            background: #28a745; color: white; border: none; border-radius: 10px;
+            font-size: 1.1rem; font-weight: bold; cursor: pointer;
+        }
+
+        #close-btn {
+            margin-top: 5px; padding: 10px 40px; background: #FF6B6B; color: white;
+            border: none; border-radius: 25px; font-size: 1.2rem; font-weight: bold; cursor: pointer;
+        }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
-  }
-}
-</script>
 </head>
 <body>
-    <div id="root"></div>
+    
+    <div id="start-overlay">▶ タッチしてあそぶ！</div>
+    <div id="gear-btn">⚙️</div>
+
+    <div id="settings-modal">
+        <div class="modal-content">
+            <h2>せってい</h2>
+            
+            <button id="fullscreen-btn">🖥 全画面表示にする</button>
+
+            <h3>🎮 あそびかた</h3>
+            <div class="btn-group" id="play-mode-settings">
+                <button data-val="auto" class="active">かんしょう</button>
+                <button data-val="tap">れんだ！</button>
+            </div>
+
+            <h3>🕐 じかん</h3>
+            <div class="btn-group" id="time-settings">
+                <button data-val="auto" class="active">じどう</button>
+                <button data-val="day">ひる</button>
+                <button data-val="night">よる</button>
+            </div>
+
+            <h3>☔ てんき</h3>
+            <div class="btn-group" id="weather-settings">
+                <button data-val="auto" class="active">じどう</button>
+                <button data-val="clear">はれ</button>
+                <button data-val="rain">あめ</button>
+                <button data-val="snow">ゆき</button>
+            </div>
+
+            <button id="close-btn">とじる</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+/**
+ * ふみきりカンカン！関西スペシャル (v7.0 - Fullscreen & PWA)
+ * - Added: Fullscreen Toggle Button in Settings
+ * - Added: PWA meta tags
+ * - Fix: Overlay definition
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- Zoom Prevention ---
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+
+// --- Audio ---
+let audioCtx;
+let isAudioEnabled = false;
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    isAudioEnabled = true;
+    document.getElementById('start-overlay').style.display = 'none';
+    
+    // Attempt fullscreen on start (optional, may be blocked by browser)
+    // toggleFullscreen(); 
+}
+function playTone(type) {
+    if (!isAudioEnabled || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    if (type.includes('shinkansen')) {
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(300, now + 0.4);
+        gainNode.gain.setValueAtTime(0.15, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4); osc.start(now); osc.stop(now + 0.4);
+    } else if (['rapit','kuroshio','special_rapid'].includes(type)) {
+        osc.type = 'square'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(150, now + 0.3);
+        gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.4); osc.start(now); osc.stop(now + 0.4);
+    } else if (type.includes('local') || type === 'medetai') {
+        osc.type = 'square'; osc.frequency.setValueAtTime(350, now); osc.frequency.setValueAtTime(300, now + 0.2);
+        gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.4); osc.start(now); osc.stop(now + 0.4);
+    } else {
+        osc.type = 'triangle'; const pitch = 200 + Math.random() * 150; osc.frequency.setValueAtTime(pitch, now);
+        gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15); osc.start(now); osc.stop(now + 0.15);
+    }
+}
+
+// --- Config ---
+let width, height;
+let entities = [];
+let particles = [];
+let clouds = [];
+let weatherParticles = [];
+let frameCount = 0;
+let skyLine, elevatedTrackY, groundTrackY, roadY;
+
+// Settings & Env
+const SETTINGS = {
+    playMode: 'auto',
+    timeMode: 'auto',
+    weatherMode: 'auto'
+};
+const ENV = { time: 0, cycleDuration: 3600, isNight: false, nightIntensity: 0, weather: 'clear', weatherTimer: 0 };
+
+// UI Setup
+const gearBtn = document.getElementById('gear-btn');
+const settingsModal = document.getElementById('settings-modal');
+const closeBtn = document.getElementById('close-btn');
+const overlay = document.getElementById('start-overlay');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+gearBtn.addEventListener('click', (e) => { e.stopPropagation(); settingsModal.style.display = 'flex'; });
+closeBtn.addEventListener('click', (e) => { e.stopPropagation(); settingsModal.style.display = 'none'; });
+
+// Fullscreen Logic
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch((err) => {
+            console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+fullscreenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleFullscreen();
+    settingsModal.style.display = 'none'; // Auto close menu
+});
+
+function setupButtonGroup(id, key) {
+    const container = document.getElementById(id);
+    const buttons = container.querySelectorAll('button');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            SETTINGS[key] = btn.dataset.val;
+            
+            if (key === 'playMode') {
+                CROSSING.state = 'OPEN';
+                CROSSING.isAlarmOn = false;
+                CROSSING.angle = -Math.PI / 2;
+            }
+
+            if (key === 'weatherMode' && SETTINGS.weatherMode !== 'auto') {
+                 ENV.weather = SETTINGS.weatherMode; weatherParticles = [];
+            }
+        });
+    });
+}
+setupButtonGroup('play-mode-settings', 'playMode');
+setupButtonGroup('time-settings', 'timeMode');
+setupButtonGroup('weather-settings', 'weatherMode');
+
+// Colors
+const PALETTE = {
+    sky: { day: [135, 206, 235], night: [25, 25, 112] },
+    grass: { day: [144, 238, 144], night: [34, 139, 34] },
+    road: { day: [85, 85, 85], night: [40, 40, 40] },
+    sleeper: { day: [139, 69, 19], night: [101, 67, 33] },
+    structure: { day: [204, 204, 204], night: [100, 100, 100] },
+    window: { day: 'rgba(135, 206, 235, 0.9)', night: 'rgba(255, 255, 150, 0.9)' },
+    lightWarm: 'rgba(255, 220, 150, 0.8)', lightRed: 'rgba(255, 50, 50, 0.8)'
+};
+const FIXED_COLORS = {
+    railMetal: '#888', warning: '#FF0000',
+    shinkansenE5: '#20B2AA', shinkansenE5Stripe: '#FF69B4',
+    drYellow: '#F1C40F', drYellowStripe: '#003366',
+    rapitBlue: '#002E63', maroon: '#660000', 
+    specialRapidSilver: '#E0E0E0', specialRapidBlue: '#0072BC', specialRapidBrown: '#8B4513',
+    kuroshioWhite: '#FFFFFF', kuroshioBlack: '#333333', kuroshioTeal: '#00BFFF',
+    medetaiPink: '#FFB6C1', medetaiRed: '#FF69B4',
+    localOrange: '#FFA500', localOrangeStripe: '#008000',
+    cars: ['#FF6B6B', '#4ECDC4', '#FFD93D', '#F7FFF7', '#A06CD5', '#FF9F1C']
+};
+const CROSSING = { state: 'OPEN', timer: 0, angle: -Math.PI / 2, x: 0, isAlarmOn: false };
+
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    skyLine = height * 0.35; elevatedTrackY = height * 0.25; groundTrackY = height * 0.55; roadY = height * 0.85;
+    CROSSING.x = width * 0.35;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function updateEnvironment() {
+    if (SETTINGS.timeMode === 'auto') { ENV.time = (frameCount % ENV.cycleDuration) / ENV.cycleDuration; ENV.nightIntensity = Math.pow(Math.sin(Math.PI * ENV.time), 2); }
+    else if (SETTINGS.timeMode === 'day') ENV.nightIntensity = Math.max(0, ENV.nightIntensity - 0.02);
+    else ENV.nightIntensity = Math.min(1, ENV.nightIntensity + 0.02);
+    ENV.isNight = ENV.nightIntensity > 0.3;
+
+    if (SETTINGS.weatherMode === 'auto') {
+        ENV.weatherTimer++;
+        if (ENV.weatherTimer > 1200) {
+            ENV.weatherTimer = 0; const r = Math.random();
+            if (r < 0.5) ENV.weather = 'clear'; else if (r < 0.8) ENV.weather = 'rain'; else ENV.weather = 'snow';
+            weatherParticles = [];
+        }
+    } else { ENV.weather = SETTINGS.weatherMode; }
+
+    if (ENV.weather !== 'clear') { const count = ENV.weather === 'rain' ? 5 : 2; for(let i=0; i<count; i++) weatherParticles.push(new WeatherParticle(ENV.weather)); }
+}
+function getEnvColor(key) {
+    const c1 = PALETTE[key].day; const c2 = PALETTE[key].night; const t = ENV.nightIntensity;
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * t); const g = Math.round(c1[1] + (c2[1] - c1[1]) * t); const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    return `rgb(${r},${g},${b})`;
+}
+
+// --- Drawing Helpers ---
+function drawLightCone(ctx,x,y,w,l,c,d=1){if(ENV.nightIntensity<0.2)return;ctx.save();ctx.translate(x,y);ctx.scale(d,1);const g=ctx.createRadialGradient(0,0,5,l*0.8,0,l*1.2);g.addColorStop(0,c);g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(0,-w/2);ctx.lineTo(l,-w*1.5);ctx.lineTo(l,w*1.5);ctx.lineTo(0,w/2);ctx.fill();ctx.restore();}
+function drawFace(ctx,x,y,s,l=false,e='smile'){ctx.save();ctx.translate(x,y);if(l)ctx.scale(-1,1);const o=s*0.3,sz=s*0.15;ctx.fillStyle='white';ctx.beginPath();ctx.arc(o,-sz,sz*1.6,0,Math.PI*2);ctx.arc(-o,-sz,sz*1.6,0,Math.PI*2);ctx.fill();const lx=Math.sin(frameCount*0.05)*2;ctx.fillStyle='black';ctx.beginPath();ctx.arc(o+lx,-sz,sz*0.7,0,Math.PI*2);ctx.arc(-o+lx,-sz,sz*0.7,0,Math.PI*2);ctx.fill();ctx.strokeStyle='black';ctx.lineWidth=2;ctx.beginPath();if(e==='smile')ctx.arc(0,s*0.15,s*0.25,0.2,Math.PI-0.2);else ctx.ellipse(0,s*0.2,s*0.15,s*0.1,0,0,Math.PI*2);ctx.stroke();ctx.fillStyle='rgba(255,100,100,0.3)';ctx.beginPath();ctx.arc(o+2,s*0.1,s*0.15,0,Math.PI*2);ctx.arc(-o-2,s*0.1,s*0.15,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawPandaFace(ctx,x,y,s,l=false){ctx.save();ctx.translate(x,y);if(l)ctx.scale(-1,1);ctx.fillStyle='#333';ctx.beginPath();ctx.arc(s*0.6,-s*0.8,s*0.3,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(-s*0.6,-s*0.8,s*0.3,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(s*0.35,-s*0.1,s*0.25,s*0.2,-0.2,0,Math.PI*2);ctx.ellipse(-s*0.35,-s*0.1,s*0.25,s*0.2,0.2,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(s*0.35,-s*0.15,s*0.08,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(-s*0.35,-s*0.15,s*0.08,0,Math.PI*2);ctx.fill();ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(0,s*0.2,s*0.1,s*0.06,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,s*0.3,s*0.15,0.2,Math.PI-0.2);ctx.stroke();ctx.restore();}
+function drawWheel(ctx,x,y,s,a=0){ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.fillStyle='#333';ctx.beginPath();ctx.arc(0,0,s,0,Math.PI*2);ctx.fill();ctx.fillStyle='#DDD';ctx.beginPath();ctx.arc(0,0,s*0.6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#999';for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(s*0.3,0,s*0.1,0,Math.PI*2);ctx.fill();ctx.rotate(Math.PI/2);}ctx.restore();}
+
+class Cloud { constructor(){this.x=Math.random()*width;this.y=Math.random()*(skyLine-150);this.speed=0.2+Math.random()*0.3;this.size=0.5+Math.random()*0.8;} update(){this.x+=this.speed;if(this.x>width+150)this.x=-150;} draw(){ctx.save();ctx.translate(this.x,this.y);ctx.scale(this.size,this.size);const b=ENV.isNight||ENV.weather==='rain'?200-ENV.nightIntensity*100:255;ctx.fillStyle=`rgba(${b},${b},${b},0.8)`;ctx.beginPath();ctx.arc(0,0,30,0,Math.PI*2);ctx.arc(25,-10,35,0,Math.PI*2);ctx.arc(50,0,30,0,Math.PI*2);ctx.fill();ctx.restore();} }
+class WeatherParticle { constructor(t){this.t=t;this.x=Math.random()*width;this.y=-10;if(t==='rain'){this.vy=15+Math.random()*5;this.vx=-2+Math.random()*4;this.len=20+Math.random()*20;}else{this.vy=2+Math.random()*3;this.vx=Math.sin(Math.random()*Math.PI*2)*2;this.s=3+Math.random()*4;}} update(){this.y+=this.vy;this.x+=this.vx;if(this.t==='snow')this.vx+=Math.sin(frameCount*0.1)*0.1;} draw(){ctx.save();if(this.t==='rain'){ctx.strokeStyle='rgba(170,210,255,0.6)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(this.x+this.vx,this.y+this.len);ctx.stroke();}else{ctx.fillStyle='rgba(255,255,255,0.8)';ctx.beginPath();ctx.arc(this.x,this.y,this.s,0,Math.PI*2);ctx.fill();}ctx.restore();} }
+
+class Particle {
+    constructor(x, y, text) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.life = 1.0;
+        this.vy = -2;
+    }
+    update() {
+        this.y += this.vy;
+        this.life -= 0.02;
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = ENV.isNight ? '#FFF' : '#333';
+        ctx.font = 'bold 24px Arial';
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.restore();
+    }
+}
+
+// --- Vehicle ---
+class Vehicle {
+    constructor(type, x, y, speed) {
+        this.type = type; this.x = x; this.y = y; this.speed = speed;
+        this.width = 100; this.markedForDeletion = false;
+        this.color = FIXED_COLORS.cars[Math.floor(Math.random()*FIXED_COLORS.cars.length)];
+        this.bounce = 0; this.isStopped = false; this.wheelRot = 0;
+        if (type.includes('shinkansen')) this.width=800;
+        else if (['rapit','kuroshio','special_rapid','medetai'].includes(type) || type.includes('local')) this.width=600;
+        else if (['truck','mixer','bus'].includes(type)) this.width=130;
+    }
+    update() {
+        this.isStopped = false;
+        
+        // Road stop logic: ONLY in Auto Mode
+        if (SETTINGS.playMode === 'auto') {
+            if (!this.type.includes('shinkansen') && !this.type.includes('local') && !['rapit','kuroshio','special_rapid','medetai'].includes(this.type)) {
+                const stopLine = CROSSING.x - 80; const dist = stopLine - this.x;
+                if ((CROSSING.state !== 'OPEN') && dist > 0 && dist < 100) this.isStopped = true;
+                const ahead = entities.find(e => 
+                    !e.type.includes('shinkansen') && !['rapit','kuroshio','special_rapid','medetai'].includes(e.type) && 
+                    !e.type.includes('local') && e !== this && e.x > this.x && e.x - this.x < this.width + 30
+                );
+                if (ahead) this.isStopped = true;
+            }
+        }
+        
+        if (!this.isStopped) { this.x += this.speed; this.wheelRot += this.speed * 0.1; this.bounce = Math.sin(frameCount * 0.3) * 2; }
+        if (this.x > width + 1000) this.markedForDeletion = true;
+    }
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y + this.bounce);
+        if(this.type.includes('shinkansen')) this.drawShinkansen();
+        else if(this.type==='rapit') this.drawRapit();
+        else if(this.type==='kuroshio') this.drawKuroshio();
+        else if(this.type==='special_rapid') this.drawSpecialRapid();
+        else if(this.type==='medetai') this.drawMedetai();
+        else if(this.type.includes('local')) this.drawLocal();
+        else this.drawRoadVehicle();
+        ctx.restore();
+    }
+    drawRoadVehicle(){const w=this.width;drawLightCone(ctx,w,35,20,100,PALETTE.lightWarm);drawLightCone(ctx,0,35,15,30,PALETTE.lightRed,-1);ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(w/2,55,w/2,10,0,0,Math.PI*2);ctx.fill();if(this.type==='truck'){ctx.fillStyle='#F39C12';ctx.beginPath();ctx.roundRect(w-50,10,50,40,5);ctx.fill();ctx.fillStyle=this.color;ctx.beginPath();ctx.roundRect(0,0,w-55,50,2);ctx.fill();ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(10,10,w-75,30);drawFace(ctx,w-10,25,18,false);}else if(this.type==='mixer'){ctx.fillStyle='#3498DB';ctx.beginPath();ctx.roundRect(w-50,10,50,40,5);ctx.fill();ctx.fillStyle='#95A5A6';ctx.beginPath();ctx.ellipse((w-60)/2+10,25,(w-70)/2,20,0,0,Math.PI*2);ctx.fill();ctx.save();ctx.translate((w-60)/2+10,25);ctx.rotate(this.wheelRot*-0.5);ctx.fillStyle='#7F8C8D';ctx.fillRect(-20,-10,40,20);ctx.restore();drawFace(ctx,w-10,25,18,false);}else if(this.type==='bus'){ctx.fillStyle=this.color;ctx.beginPath();ctx.roundRect(0,0,w,50,8);ctx.fill();ctx.fillStyle=ENV.isNight?PALETTE.window.night:'#87CEEB';for(let i=10;i<w-20;i+=30)ctx.fillRect(i,5,25,20);drawFace(ctx,w,35,20,false);}else{ctx.fillStyle=this.color;ctx.beginPath();ctx.roundRect(0,15,100,35,10);ctx.fill();ctx.fillStyle='#87CEEB';ctx.beginPath();ctx.roundRect(20,-5,60,35,8);ctx.fill();if(this.type==='police'){ctx.fillStyle='#FFF';ctx.fillRect(0,15,100,15);ctx.fillStyle='#000';ctx.fillRect(0,30,100,20);ctx.fillStyle='red';ctx.beginPath();ctx.arc(50,-10,6,0,Math.PI*2);ctx.fill();}if(this.type==='ambulance'){ctx.fillStyle='white';ctx.fill();ctx.fillStyle='red';ctx.fillRect(45,20,10,20);ctx.fillRect(35,25,30,10);ctx.beginPath();ctx.arc(50,-10,6,0,Math.PI*2);ctx.fill();}drawFace(ctx,90,30,20,false);}drawWheel(ctx,25,50,12,this.wheelRot);drawWheel(ctx,w-25,50,12,this.wheelRot);if(this.type==='truck'||this.type==='bus')drawWheel(ctx,w-50,50,12,this.wheelRot);}
+    drawTrainBase(i,l,h,c,f){if(i===0)drawLightCone(ctx,30,40,30,180,PALETTE.lightWarm);if(i===2)drawLightCone(ctx,-l,40,20,50,PALETTE.lightRed,-1);ctx.fillStyle=c;if(i===0)f();else ctx.fillRect(-l,0,l,h);}
+    drawShinkansen(){const l=250,g=10,bc=this.type==='shinkansen_yellow'?FIXED_COLORS.drYellow:FIXED_COLORS.shinkansenE5,sc=this.type==='shinkansen_yellow'?FIXED_COLORS.drYellowStripe:FIXED_COLORS.shinkansenE5Stripe,wc=ENV.isNight?PALETTE.window.night:'#333';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,50,bc,()=>{ctx.beginPath();ctx.moveTo(-l,0);ctx.lineTo(0,0);ctx.quadraticCurveTo(80,10,100,50);ctx.lineTo(-l,50);ctx.fill();drawFace(ctx,60,35,18,false);ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(30,15,25,8,-0.2,0,Math.PI*2);ctx.fill();});if(i===2){ctx.fillStyle=bc;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-l,0);ctx.lineTo(-l-20,50);ctx.lineTo(0,50);ctx.fill();}ctx.fillStyle=sc;ctx.fillRect(-l,25,(i===0?100:l),5);ctx.fillStyle=wc;const wc2=5,ws=l/wc2;for(let j=0;j<wc2;j++){if(i===0&&j>3)continue;ctx.fillRect(-l+10+j*ws,15,30,10);}if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    drawRapit(){const l=180,g=10,h=55,wc=ENV.isNight?PALETTE.window.night:'#87CEEB';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,h,FIXED_COLORS.rapitBlue,()=>{ctx.beginPath();ctx.moveTo(-l,0);ctx.lineTo(20,0);ctx.bezierCurveTo(60,0,70,20,70,55);ctx.lineTo(-l,55);ctx.fill();ctx.fillStyle='#111';ctx.beginPath();ctx.ellipse(40,15,15,10,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=ENV.isNight?'#FFF':'#FFD700';ctx.beginPath();ctx.arc(55,15,5,0,Math.PI*2);ctx.fill();drawFace(ctx,40,35,18,false);});ctx.fillStyle=wc;const c=4,s=l/c;for(let j=0;j<c;j++){if(i===0&&j>2)continue;ctx.beginPath();ctx.arc(-l+25+j*s,20,12,0,Math.PI*2);ctx.fill();}drawWheel(ctx,-l+30,h,12,this.wheelRot);drawWheel(ctx,(i===0?0:-10),h,12,this.wheelRot);if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    drawKuroshio(){const l=180,g=10,h=55,wc=ENV.isNight?PALETTE.window.night:'#333';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,h,FIXED_COLORS.kuroshioWhite,()=>{ctx.beginPath();ctx.moveTo(-l,0);ctx.lineTo(10,0);ctx.quadraticCurveTo(40,0,40,55);ctx.lineTo(-l,55);ctx.fill();drawPandaFace(ctx,40,25,20,false);});ctx.fillStyle=FIXED_COLORS.kuroshioTeal;ctx.fillRect(-l,45,(i===0?l+10:l),5);ctx.fillStyle=wc;const c=4,s=l/c;for(let j=0;j<c;j++){if(i===0&&j>2)continue;ctx.fillRect(-l+10+j*s,15,25,15);}drawWheel(ctx,-l+30,h,12,this.wheelRot);drawWheel(ctx,(i===0?0:-10),h,12,this.wheelRot);if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    drawSpecialRapid(){const l=180,g=10,h=55,wc=ENV.isNight?PALETTE.window.night:'#87CEEB';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,h,FIXED_COLORS.specialRapidSilver,()=>{ctx.beginPath();ctx.moveTo(-l,0);ctx.lineTo(10,0);ctx.quadraticCurveTo(30,5,30,55);ctx.lineTo(-l,55);ctx.fill();ctx.fillStyle='#111';ctx.fillRect(10,5,20,20);drawFace(ctx,30,35,18,false);});ctx.fillStyle=FIXED_COLORS.specialRapidBrown;ctx.fillRect(-l,35,(i===0?l+20:l),4);ctx.fillStyle=FIXED_COLORS.specialRapidBlue;ctx.fillRect(-l,39,(i===0?l+20:l),4);ctx.fillStyle=wc;const c=3,s=l/c;for(let j=0;j<c;j++){if(i===0&&j>1)continue;ctx.fillRect(-l+15+j*s,10,35,18);}drawWheel(ctx,-l+30,h,12,this.wheelRot);drawWheel(ctx,(i===0?0:-10),h,12,this.wheelRot);if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    drawMedetai(){const l=180,g=10,h=55,wc=ENV.isNight?PALETTE.window.night:'#FFF';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,h,FIXED_COLORS.medetaiPink,()=>{ctx.beginPath();ctx.roundRect(-l,0,l+20,h,[0,15,10,0]);ctx.fill();drawFace(ctx,20,30,25,false);});ctx.strokeStyle=FIXED_COLORS.medetaiRed;ctx.lineWidth=1;for(let x=-l;x<(i===0?10:0);x+=15){for(let y=10;y<50;y+=10){ctx.beginPath();ctx.arc(x,y,5,0,Math.PI);ctx.stroke();}}ctx.fillStyle=wc;const c=3,s=l/c;for(let j=0;j<c;j++){ctx.beginPath();ctx.arc(-l+30+j*s,20,10,0,Math.PI*2);ctx.fill();}drawWheel(ctx,-l+30,h,12,this.wheelRot);drawWheel(ctx,(i===0?0:-10),h,12,this.wheelRot);if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    drawLocal(){const l=180,g=10,h=55,isM=this.type==='local_maroon',bc=isM?FIXED_COLORS.maroon:FIXED_COLORS.localOrange,sc=isM?'#FFF':FIXED_COLORS.localOrangeStripe,wc=ENV.isNight?PALETTE.window.night:'#87CEEB';for(let i=0;i<3;i++){ctx.save();ctx.translate(-(i*(l+g)),0);this.drawTrainBase(i,l,h,bc,()=>{ctx.beginPath();ctx.roundRect(-l,0,l+20,h,[0,20,10,0]);ctx.fill();drawFace(ctx,20,30,22,false);});ctx.fillStyle=sc;if(isM)ctx.fillRect(-l,5,(i===0?l+10:l),3);else ctx.fillRect(-l,40,(i===0?l+20:l),8);ctx.fillStyle=wc;const c=3,w=40,s=(l-(w*c))/(c+1);for(let j=0;j<c;j++){if(isM){ctx.strokeStyle='#C0C0C0';ctx.lineWidth=2;ctx.strokeRect(-l+s+j*(w+s),10,w,20);}ctx.fillRect(-l+s+j*(w+s),10,w,20);}ctx.fillStyle='#CCC';ctx.fillRect(-l+s-5,10,5,40);drawWheel(ctx,-l+30,h,12,this.wheelRot);drawWheel(ctx,(i===0?0:-10),h,12,this.wheelRot);if(i<2){ctx.fillStyle='#333';ctx.fillRect(-g-5,30,10,10);}ctx.restore();}}
+    honk(){this.bounce=-20;playTone(this.type);const s=["🎵","🎶","🎺","Puu!","Gatagoto"];const t=s[Math.floor(Math.random()*s.length)];particles.push(new Particle(this.x+50,this.y-20,t));}
+}
+
+// --- Spawning Functions ---
+function spawnVehicle() {
+    const t = ['car','car','car','police','ambulance','truck','truck','mixer','bus'];
+    const type = t[Math.floor(Math.random()*t.length)];
+    const speed = 3 + Math.random() * 2.5;
+    entities.push(new Vehicle(type, -150, roadY - 30, speed));
+}
+function spawnLocalTrain() {
+    const kt = ['rapit', 'kuroshio', 'special_rapid', 'medetai', 'local_maroon'];
+    // In Tap Mode, allow overlap? No, keeps it clean. Or yes for chaos. Let's allow multiple in tap mode.
+    if (SETTINGS.playMode === 'auto') {
+        if (entities.some(e => kt.includes(e.type) || e.type.includes('local'))) return;
+    }
+    const type = kt[Math.floor(Math.random() * kt.length)];
+    let speed = 4; if (type === 'rapit' || type === 'special_rapid') speed = 7; if (type === 'kuroshio') speed = 6; if (type === 'medetai') speed = 3.5;
+    entities.push(new Vehicle(type, -700, groundTrackY - 55, speed));
+}
+function spawnShinkansen() {
+    if (SETTINGS.playMode === 'auto') {
+        if (entities.some(e => e.type.includes('shinkansen'))) return;
+    }
+    const type = Math.random() < 0.3 ? 'shinkansen_yellow' : 'shinkansen_e5';
+    entities.push(new Vehicle(type, -900, elevatedTrackY - 50, 15));
+}
+
+// --- Tap Logic ---
+function handleTap(e) {
+    if (!isAudioEnabled) initAudio();
+    
+    // If Settings Open, ignore
+    if (settingsModal.style.display === 'flex') return;
+
+    // If clicking a vehicle, honk
+    let clickedVehicle = false;
+    // Check touch pos
+    let tx, ty;
+    if(e.touches) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }
+    else { tx = e.clientX; ty = e.clientY; }
+
+    // Simple distance check for honk
+    for (let ent of entities) {
+        if (tx > ent.x && tx < ent.x + ent.width && ty > ent.y && ty < ent.y + 100) {
+            ent.honk();
+            clickedVehicle = true;
+            break;
+        }
+    }
+
+    // Spawn Logic (Only if Tap Mode active and didn't click existing vehicle)
+    if (SETTINGS.playMode === 'tap' && !clickedVehicle) {
+        // Area detection
+        if (ty < elevatedTrackY + 50) {
+            // Sky/High -> Shinkansen
+            spawnShinkansen();
+        } else if (ty < roadY - 50) {
+            // Middle -> Train
+            spawnLocalTrain();
+        } else {
+            // Bottom -> Car
+            spawnVehicle();
+        }
+    } else if (SETTINGS.playMode === 'auto' && !clickedVehicle) {
+        // Random honk if auto mode and clicked empty space
+        if (entities.length > 0) {
+             const randomEntity = entities[Math.floor(Math.random() * entities.length)];
+             randomEntity.honk();
+        }
+    }
+}
+
+canvas.addEventListener('mousedown', handleTap);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleTap(e); }, { passive: false });
+overlay.addEventListener('click', initAudio);
+overlay.addEventListener('touchstart', initAudio);
+
+
+// --- Game Loop ---
+function update() {
+    frameCount++;
+    updateEnvironment();
+
+    if (clouds.length < 5) clouds.push(new Cloud()); clouds.forEach(c => c.update());
+    weatherParticles.forEach(p => p.update()); weatherParticles = weatherParticles.filter(p => p.y < height + 50);
+
+    // Auto Spawning only in Auto Mode
+    if (SETTINGS.playMode === 'auto') {
+        if (Math.random() < 0.012) spawnVehicle();
+        if (Math.random() < 0.003 && CROSSING.state === 'OPEN') spawnLocalTrain();
+        if (Math.random() < 0.005) spawnShinkansen();
+    }
+
+    // Crossing Logic (Reacts to trains regardless of spawn method)
+    // *** MODIFIED: Crossing Logic Only active in AUTO Mode ***
+    if (SETTINGS.playMode === 'auto') {
+        const localTrain = entities.find(e => !e.type.includes('shinkansen') && !['car','truck','bus','police','ambulance','mixer'].includes(e.type));
+        if (localTrain) {
+            const dist = localTrain.x - CROSSING.x;
+            if (dist < -800 && dist > -850 && CROSSING.state === 'OPEN') { CROSSING.state = 'WARNING'; CROSSING.timer = 80; }
+            if (dist > 800 && (CROSSING.state === 'CLOSED' || CROSSING.state === 'CLOSING')) { CROSSING.state = 'OPENING'; }
+        }
+        switch (CROSSING.state) {
+            case 'WARNING': CROSSING.timer--; if (frameCount % 15 === 0) CROSSING.isAlarmOn = !CROSSING.isAlarmOn; if (CROSSING.timer <= 0) CROSSING.state = 'CLOSING'; break;
+            case 'CLOSING': CROSSING.angle += 0.05; if (CROSSING.angle >= 0) { CROSSING.angle = 0; CROSSING.state = 'CLOSED'; } if (frameCount % 15 === 0) CROSSING.isAlarmOn = !CROSSING.isAlarmOn; break;
+            case 'CLOSED': if (frameCount % 15 === 0) CROSSING.isAlarmOn = !CROSSING.isAlarmOn; break;
+            case 'OPENING': CROSSING.angle -= 0.05; CROSSING.isAlarmOn = false; if (CROSSING.angle <= -Math.PI/2) { CROSSING.angle = -Math.PI/2; CROSSING.state = 'OPEN'; } break;
+        }
+    }
+
+    entities.forEach(e => e.update()); entities = entities.filter(e => !e.markedForDeletion); entities.sort((a, b) => a.y - b.y);
+    particles.forEach(p => p.update()); particles = particles.filter(p => p.life > 0);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = getEnvColor('sky'); ctx.fillRect(0, 0, width, height);
+    clouds.forEach(c => c.draw());
+    ctx.fillStyle = getEnvColor('grass'); ctx.fillRect(0, skyLine, width, height - skyLine);
+    ctx.fillStyle = getEnvColor('road'); ctx.fillRect(0, roadY, width, 90);
+    ctx.strokeStyle = ENV.isNight ? '#888' : '#FFF'; ctx.setLineDash([30, 30]); ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, roadY + 45); ctx.lineTo(width, roadY + 45); ctx.stroke(); ctx.setLineDash([]);
+
+    const structColor = getEnvColor('structure');
+    ctx.fillStyle = structColor; for (let x = 50; x < width; x+=250) ctx.fillRect(x, elevatedTrackY, 60, skyLine - elevatedTrackY + 50);
+    ctx.fillStyle = structColor; ctx.fillRect(0, elevatedTrackY, width, 25);
+    
+    entities.filter(e => e.type.includes('shinkansen')).forEach(e => e.draw());
+    
+    ctx.strokeStyle = structColor; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, elevatedTrackY + 5); ctx.lineTo(width, elevatedTrackY + 5); ctx.stroke();
+    ctx.fillStyle = FIXED_COLORS.railMetal; ctx.fillRect(0, groundTrackY - 10, width, 80);
+    ctx.fillStyle = getEnvColor('sleeper'); for (let x = 0; x < width; x+=30) ctx.fillRect(x, groundTrackY, 8, 60);
+    ctx.fillStyle = FIXED_COLORS.railMetal; ctx.fillRect(0, groundTrackY + 10, width, 6); ctx.fillRect(0, groundTrackY + 45, width, 6);
+    
+    drawCrossingPost(CROSSING.x, groundTrackY - 40, false);
+    entities.filter(e => !e.type.includes('shinkansen') && !['car','truck','bus','police','ambulance','mixer'].includes(e.type)).forEach(e => e.draw());
+    drawCrossingPost(CROSSING.x, groundTrackY + 70, true); drawBarrier(CROSSING.x, groundTrackY + 70);
+    entities.filter(e => ['car','truck','bus','police','ambulance','mixer'].includes(e.type)).forEach(e => e.draw());
+    
+    weatherParticles.forEach(p => p.draw());
+    particles.forEach(p => p.draw());
+
+    if (ENV.nightIntensity > 0.1) {
+        ctx.fillStyle = `rgba(0, 0, 50, ${ENV.nightIntensity * 0.3})`;
+        ctx.fillRect(0, 0, width, height);
+    }
+}
+
+function drawCrossingPost(x, y, isFront) {
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = '#2C3E50'; ctx.fillRect(-6, -90, 12, 90); ctx.fillStyle = '#F1C40F'; ctx.fillRect(-12, -15, 24, 15); ctx.fillStyle = '#333'; ctx.fillRect(-25, -90, 50, 20);
+    const lightColor = (on) => on ? FIXED_COLORS.warning : (ENV.isNight ? '#330000' : '#550000');
+    if (CROSSING.state !== 'OPEN') { ctx.fillStyle = lightColor(CROSSING.isAlarmOn); ctx.beginPath(); ctx.arc(-15, -80, 7, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = lightColor(!CROSSING.isAlarmOn); ctx.beginPath(); ctx.arc(15, -80, 7, 0, Math.PI*2); ctx.fill(); }
+    else { ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-15, -80, 7, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(15, -80, 7, 0, Math.PI*2); ctx.fill(); }
+    ctx.strokeStyle = '#F1C40F'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-20, -115); ctx.lineTo(20, -95); ctx.moveTo(20, -115); ctx.lineTo(-20, -95); ctx.stroke();
+    ctx.restore();
+}
+function drawBarrier(x, y) {
+    ctx.save(); ctx.translate(x - 30, y - 30); ctx.rotate(CROSSING.angle);
+    ctx.fillStyle = '#F1C40F'; ctx.fillRect(0, -6, 140, 12); ctx.fillStyle = '#000'; for(let i=20; i<140; i+=40) ctx.fillRect(i, -6, 20, 12);
+    ctx.restore();
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
 </body>
 </html>
